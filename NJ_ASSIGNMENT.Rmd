@@ -1,0 +1,469 @@
+---
+knit: (function(NJ_ASSIGNMENT.Rmd,encoding) { 
+      out_dir <- '';
+      rmarkdown::render(NJ_ASSIGNMENT.Rmd,
+                        encoding=encoding,params = 'ask', 
+                        output_file=file.path(dirname(NJ_ASSIGNMENT.Rmd), 
+                        out_dir, 'NJ_analysis.html')) })
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+title: " Disparities In Incidence Case Rates of Problem X in NJ"
+author: "*George Arthur*"
+output:
+  html_document: 
+    css: mystyle.css
+fontsize: 12pt
+---
+
+```{r Libraries, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE,
+                      warning = FALSE, eval = TRUE)
+
+library(knitr)
+library(plotly)
+library(readxl)
+library(RcmdrMisc)
+library(janitor)
+library(tidyr)
+library(unpivotr)
+library(janitor)
+library(openxlsx)
+library(stringr)
+library(tidyverse)
+library(arrow)
+library(htmlTable)
+library(huxtable)
+library(magrittr)
+library(reshape2)
+```
+
+This sample R program explores data visualizations of incident case counts of Problem X using data obtained from residents of NJ. These visualizations and analysis can be used to better understand the emerging health inequalities and disparities of Problem X cases among residents and to guide rapid public health decision-making.  
+
+**Data Connection**
+
+A connection is setup with the data by pulling in the excel data file and assigning case counts.
+
+```{r  Data connection, eval=TRUE, echo=TRUE}
+
+
+df_pop <- openxlsx::read.xlsx("Test dataset and demographics_2022.xlsx", 
+                              startRow = 5, fillMergedCells = TRUE) %>% 
+  subset(select = -1) %>% 
+  clean_names() %>% 
+  rename(Ages = 1) %>% 
+  head(-4)
+
+#df_pop %<>% head(-2)
+
+white_pop <- df_pop %>% 
+  select(1,matches("white")) %>% 
+  row_to_names(row_number = 1)
+
+#reading in case data in sheet 2
+df_cases <- read_excel("Test dataset and demographics_2022.xlsx", sheet = 2) %>% 
+  row_to_names(row_number = 2, remove_rows_above = T) 
+
+
+#Adding index column to represent case counts and removing duplicates
+df_cases <- within(df_cases, Case_count <- 1) %>% distinct()
+
+```
+
+
+The total cases observed for this report included `r sum(df_cases$Case_count)` individuals and data collected were analyzed together to present useful visualizations and explore further analysis. Problem X data were analyzed by demographic characteristics including age group, gender, alien status and race/ethnicity. All visualizations, including bar charts, and summary tables were interactive.     
+
+
+```{r Age, echo=FALSE}
+
+#Aggregate age group counts
+df_age <- df_cases %>% 
+  ungroup() %>% 
+  select(Age_group,
+         Case_count) 
+
+df_age_up <- df_age %>% 
+  pivot_wider(names_from  = Age_group, 
+              values_from =Case_count, 
+              values_fn   = list(Case_count = sum))
+
+df_age_up <- gather(df_age_up,'Age_group','Count') %>% arrange(df_age_up)
+
+#Maintain constant row arrangements when plotting
+df_age_up$Age_group<- factor(df_age_up$Age_group, levels = c('0-9',
+                                                             '10-19',
+                                                             '20-29',
+                                                             '30-39',
+                                                             '40-49', 
+                                                             '50-59', 
+                                                             '60-69', 
+                                                             '70-79', 
+                                                             '80+'))
+#running a chi sq test 
+chi_age <-chisq.test(df_age_up$Count)
+
+#Bar charts
+fig_age <- plot_ly(df_age_up, text = ~Count,
+                         x = ~Age_group, 
+                         y = ~Count, name = 'Count', 
+                         type = 'bar') 
+
+fig_age %<>% add_lines(y = df_age_up$Count, showlegend=FALSE, color = 'green') %>% 
+  layout(xaxis = list(title = "Age group"), 
+         yaxis = list(title = "Case counts"))
+
+fig_age
+
+
+```
+
+**By Age group**
+
+This shows the distribution of problem X by age group in NJ. `r max(df_age_up$Count)` and `r max(df_age_up$Count[df_age_up$Count != max(df_age_up$Count)])` were the highest incident cases recorded and these were accounted for by individuals between age group "30-39" and "20-29" respectively. Case counts and age group were evaluated using the chi-square tests to detect the relationship between the two variables. A p-value of approximately `r chi_age$p.value`, less than the .05 was recorded and this concluded age group is dependent of the incident case counts of Problem X, hence there is a correlation between the two variables. Individuals between age group "20-29" and "30-39" experienced significantly higher burden of problem X and were highly susceptible with higher prevalence ratios (0.32). Allocating more resources to this population will go a long way to reduce rising cases of Problem X among the populace.  
+
+```{r Age Percentage}
+#adding percentages by age group
+df_age_per <- df_age_up %>% 
+  mutate(`Percent Total` = round((Count/sum(Count))*100, 2)) %>% 
+  adorn_totals("row") %>% 
+  mutate(`Percent Total` = paste0(`Percent Total`, '%')) 
+
+df_age_per %<>% arrange(Age_group)
+
+#adding CSS styling to tables
+writeLines("td, th { padding : 6px } th { background-color : Black ; 
+           color : white; border : 1px solid white; } td { color : Grey ; 
+           border : 1px solid Grey }", con = "mystyle.css")
+
+kable(
+  df_age_per,
+  caption = 'Case distribution by Age group',
+  booktabs = TRUE
+)
+#htmlTable(df_age_per, caption = "Age group distribution for Problem X")
+
+```
+
+
+**By Gender**
+
+This shows the gender distribution of Problem X in NJ by gender (Female and Male). 
+
+
+```{r Gender}
+#Analyzing gender data
+df_sex <- df_cases %>% 
+  select(Gender,
+         Case_count)
+
+df_sex_agg <- df_sex %>% 
+  group_by(Gender) %>% 
+  summarise(Count = sum(Case_count))
+
+
+fig_sex <- plot_ly(df_sex_agg, labels = ~Gender, values = ~Count, type = 'pie', width = 400)
+
+fig_sex <- fig_sex %>% 
+  layout(xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+         yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+
+fig_sex
+
+
+gen_chi <- chisq.test(df_sex_agg$Count)
+
+
+# df_sex_agg <- df_sex %>% 
+#   pivot_wider(names_from = Gender,
+#               values_from = Case_count,
+#               values_fn = sum) 
+#chi_sex <- lapply(df_sex_agg[,-1], function(x) chisq.test(x))
+
+#do.call(rbind, chi_sex)[,c(1,3)]
+
+```
+
+Females recorded higher incidence case counts than males (`r max(df_sex_agg$Count)`, `r max(df_sex_agg$Count[df_sex_agg$Count != max(df_sex_agg$Count)]) `) contributing to 76.9% and 23.1% respectively of all incident cases. A p-value of `r gen_chi$p.value` was also recorded highlighting the dependence of gender on cases. The female population were highly affected by rising cases of Problem X and highlights the systemic entrenched disadvantages experienced. Allocating more resources to this population will help reduce counts. 
+
+
+
+```{r Age and Gender}
+
+df_sag <- df_cases %>% 
+  select(Age_group,
+         Gender,
+         Case_count)
+
+df_sex_age <- df_sag %>% 
+  pivot_wider(names_from  = Gender, 
+              values_from =Case_count, 
+              values_fn   = list(Case_count = sum))
+
+
+df_sex_age %<>% arrange(Age_group)
+
+fig_sex_age <- plot_ly(df_sex_age, x = ~Age_group, 
+                       y = ~Female, type = 'bar', name = 'Female')
+
+fig_sex_age %<>% add_trace(y = ~Male, name = 'Male') %>% 
+  layout(xaxis = list(title = 'Age group'),
+         yaxis = list(title = 'Count'), barmode = 'group')
+
+fig_sex_age
+
+```
+
+```{r chi sq Sex_age}
+
+#chisq test on all columns
+chi_sag <- lapply(df_sex_age[,-1], function(x) chisq.test( x))
+
+kable(do.call(rbind, chi_sag)[,c(1,3)])
+
+```
+
+Analyzing the distribution of sex under age group, higher incidence case rates were recorded for female between the ages of "20-29" and "30-39". To investigate the relationship between gender and age group, a chi-square test to look for association. Since p-values recorded where <0.05, hence the two variables do differ significantly. Hence by analyzing gender under age group we lost quite a lot of useful information, thus producing a "non-significant" chi-square test.
+
+```{r Table for by age and gender}
+
+#Aggregating by age and gender and finding their percentage counts
+df_sag <- df_sex_age %>% 
+  mutate(`% of Female` = round((Female/sum(Female))*100, 2)) %>% 
+  mutate(`% of Male` = round((Male/sum(Male))*100, 2)) %>%
+  mutate(`% of Female` = paste0(`% of Female`, '%')) %>% 
+  mutate(`% of Male` = paste0(`% of Male`, '%'))
+
+kable(
+  df_sag, format = "html",
+  caption = 'Distribution of cases by Age group and Gender'
+)
+
+```
+
+\n 
+
+**Smoking Status by Age and Gender**
+
+By observing the smoking status of affected individuals we can easily identify the population mostly affected by problem X and some of the underlying conditions influencing these cases. 
+
+```{r Smoking Status and gender}
+
+df_sas <- df_cases %>% 
+  select(Gender,
+         Smoking_status,
+         Case_count)
+
+df_sas_agg <- df_sas %>% 
+  group_by(Gender, Smoking_status) %>% 
+  summarise_at(vars(Case_count),sum) %>% drop_na
+  
+df_sas_up <- df_sas_agg %>% 
+  pivot_wider(names_from  = Gender, 
+              values_from =Case_count, 
+              values_fn   = list(Case_count = sum))
+
+fig_sas <- plot_ly(df_sas_up, x = ~Smoking_status, 
+                   y = ~Female, type = 'bar', name = 'Female')
+
+fig_sas %<>% add_trace(y = ~Male, name = 'Male') %>% 
+  layout(xaxis = list(title = "Smoking Status"),
+         yaxis = list(title = 'Count'), barmode = 'group')
+
+fig_sas
+
+#cor.test(x=df_sas_up$Female, y=df_sas_up$Male, method = 'pearson')
+
+
+chi_smag <- lapply(df_sas_up[,-1], function(x) chisq.test( x))
+
+kable(do.call(rbind, chi_smag)[,c(1,3)])
+```
+
+Analyzing the chi-square test results for gender under smoking status, we can conclude smoking statuses did not differ significantly among the two genders since p is > 0.05. Hence, regardless of smoking status, individuals were equally likely to be affected by Problem X.
+
+```{r Smoking Status and age group}
+
+
+df_smag <- df_cases %>% 
+  select(Age_group,
+         Smoking_status,
+         Case_count)
+
+df_smag_aggd <- df_smag %>% 
+  group_by(Age_group,Smoking_status) %>% 
+  summarise_at(vars(Case_count),sum)
+
+df_smag_agg <- df_smag %>% 
+  group_by(Age_group,Smoking_status) %>% 
+  summarise(count = n())
+  
+df_smag_up <- df_smag_agg %>% 
+  pivot_wider(names_from  = Smoking_status, 
+              values_from =Case_count, 
+              values_fn   = list(Case_count = sum))
+
+
+chi_smag <- lapply(df_smag_up[,-1], function(x) chisq.test( x))
+
+ggplot(data = df_smag_up) + 
+  stat_summary(
+    mapping = aes(x = cut, y = depth),
+    fun.min = min,
+    fun.max = max,
+    fun = median
+  )
+
+
+
+#Aggregating data into a table
+kable(df_smag_up, format = "html")
+
+#all_df <- df_cases %>% select(everything())
+
+
+```
+
+On the other hand, the chi-square results of smoking under age group was significant and individuals with age_group "20-29" and "30-39" who recorded higher case rates experienced higher risk of getting infected.
+
+```{r P values - Smoking /age}
+kable(do.call(rbind, chi_smag)[,c(1,3)])
+```
+
+
+
+**By Alien Status**
+
+Incident case counts of Problem X were analyzed by Alien status. Individuals who responded "No" to Alien status recorded the highest case rates compared to those who respond "Yes" (620) and "Unk" (302).
+
+```{r Alien Status}
+
+df_alien <- df_cases %>% 
+  select(`Alien (like from Outer Space)`,
+         Case_count) %>% 
+  rename(Alien_stat = 1)
+
+
+#replacing all Yes in Alien_stat with Y
+df_alien$Alien_stat <- str_replace(df_alien$Alien_stat,"Yes", "Y")
+#replacing all No in Alien-stat with N
+df_alien$Alien_stat <- str_replace(df_alien$Alien_stat,"No", "N")
+
+df_alien_agg <- df_alien %>% 
+  group_by(Alien_stat) %>% 
+  summarise_at(vars(Case_count), sum) %>% drop_na
+
+df_alien_agg$Alien_stat<- factor(df_alien_agg$Alien_stat, levels = c('Y',
+                                                             'N',
+                                                             'Unk'))
+
+
+fig_alien <- plot_ly(df_alien_agg, x = ~Alien_stat, y = ~Case_count, 
+                     type = 'bar', name = 'Alien Status') %>% 
+  layout(xaxis = list(title = "Alien (like from outer Space"),
+         yaxis = list(title = 'Count'))
+
+chi_alien <-chisq.test(df_alien_agg$Case_count)
+
+#fig <- plot_ly(df_alien_agg, y = ~Case_count, type = "box", width = 200)
+
+fig_alien
+```
+
+A chi-square test was used to analyze Alien status and a p-value of approximately `r chi_alien$p.value` less than 0.05, implying the two variables are significant. Hence alien status of an individuals were highly significant with increasing case counts and allocation of resources to people who were not from outer space will go a long way to reduce rising cases. 
+
+
+**By Race/Ethnicity**
+
+Incident case rates information on race/ethnicity available included, 67.95% White, 18.26% Black, 13.21% Asian, 1.86% Asian Americans, Native Hawaiians, and Pacific Islanders and 22.84% Hispanics. The Hispanic/Latino category included people of any race, and all other categories exclude those who identify as Hispanic/Latino.
+
+```{r white}
+df_race <- df_cases %>% 
+  select(White, 
+         Black,
+         Asian, 
+         AIAN_NHPI, 
+         Hispanic) 
+
+#substituting all Y with 1
+df_race[df_race == "Y"] <- "1"
+
+#assign numeric to characters to aggregate
+df_race %<>% mutate(across(.cols=where(is.character), .fns = as.numeric)) 
+
+df_race_agg <-  aggregate(value~variable, melt(df_race),sum) %>%
+  rename(Race = 1,Count = 2) %>% 
+  mutate(`Percent Total` = round((Count/sum(nrow(df_race)) * 100), 3)) %>% 
+  mutate(`Percent Total` = paste0(`Percent Total`, '%'))
+
+
+chi_race <-chisq.test(df_race_agg$Count)
+
+fig_race <- plot_ly(df_race_agg, text = ~Count,
+                         x = ~Race, 
+                         y = ~Count, name = 'Count', 
+                         type = 'bar') 
+
+fig_race %<>% add_lines(y = df_race_agg$Count, showlegend=FALSE, color = 'green') %>% 
+  layout(xaxis = list(title = "Race/Ethnicity"), 
+         yaxis = list(title = "Case counts"))
+
+fig_race
+
+df_race_agg <- within(df_race_agg, mean = apply(df_race_agg,2,function(x) x/sum(x)))
+
+df_race_agg<- data.frame(cbind(df_race_agg[1],
+                               apply(df_race_agg[2], MARGIN = 2, 
+                                      function(x) ((x /sum(x))) %>% round(digits = 2))))
+
+ggplot(df_race_agg, aes(x= Count, y = Race))+
+  geom_boxplot(alpha = 0.5)+
+  theme_minimal()
+```
+
+With a p-value of approximately `r chi_race$p.value` also less than 0.5, we can conclude that the race/ethnicity has a strong correlation with cases and can be considered as an underlying factor driving incident counts of Problem X. Allocating more resources to the White population which recorded the highest incidence case counts (`r max(df_race_agg$Count)`) should be considered to help curb or reduce rising cases of Problem X in NJ. 
+
+```{r Race with count}
+
+df_race_c <- df_cases %>% 
+  select(Count,
+         White, 
+         Black,
+         Asian, 
+         AIAN_NHPI, 
+         Hispanic) 
+
+df_race_c[df_race_c == "Y"] <- "1"
+
+#assign numeric to characters to aggregate
+df_race_c %<>% mutate(across(.cols=1:5, .fns = as.numeric)) %>% 
+  mutate_all(~replace(.,is.na(.), 0))
+
+df_race_c %<>% group_by(Count) %>% 
+  summarise(across(where(is.numeric), ~ sum(.x)))
+```
+
+**Conclusions**
+
+The burden of Problem X in terms of rising case rates was disproportionately higher among Whites and people between age group "20-29" and "30-39". These findings point to the systemic disadvantages experienced and highlight the need to address inequities in these communities by developing programs that improve overall health outcomes. Further work and more well-designed studies and analysis are needed to expand the knowledge on age group and racial differences in Problem X outcomes and to identify more social determinants shaping the disparities in the outcome of Problem X among NJ residents. 
+
+```{r summary stats}
+
+
+col_summary <- function(data, col_names, na.rm = F){
+  data %>% 
+  summarise(across({{col_names}}, 
+    list(
+      min = sum,
+      max = max,
+      median = median,
+      mean = mean
+    ),
+    na.rm = na.rm,
+    .names = "{col}_{fn}"
+    ))
+  
+}
+
+
+df_race_c %>% col_summary(c(White, Asian))
+
+```
+
