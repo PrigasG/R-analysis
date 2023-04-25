@@ -1,0 +1,436 @@
+---
+title: "Year ... in Review: The NJ COVID-19 Community Corps, Ultra Warm Chain of Trust, and The Library Project"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    css: mystyle.css
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE,
+                      message = FALSE, 
+                      fig.align = "center")
+```
+
+```{r Libraries}
+library(qualtRics)
+library(tidyverse)
+library(plotly)
+library(kableExtra)
+library(gt)
+library(janitor)
+library(gtExtras)
+library(reshape2)
+
+#resolving conflicts
+conflicted::conflicts_prefer(dplyr::rename())
+conflicted::conflicts_prefer(reshape2::melt())
+conflicted::conflicts_prefer(plotly::layout)
+
+
+```
+
+```{r Rounding function}
+round2 = function(x, digits) {
+  posneg = sign(x)
+  z = abs(x)*10^digits
+  z = z + 0.5 + sqrt(.Machine$double.eps)
+  z = trunc(z)
+  z = z/10^digits
+  z*posneg
+}
+```
+
+```{r Pulling data, echo=FALSE}
+#fetch survey using ID and prevent from showing load progress
+capture.output({
+  mysurvey <- fetch_survey(surveyID = "SV_bd8k3gYqauK6N02")
+
+})
+#mysurvey
+
+```
+
+```{r By Partnership}
+
+#under partnership
+df_partner <- mysurvey %>% 
+  select(matches("^Q[3_]")) %>% 
+  select(c(-1)) %>% 
+  summarise(across(where(is.numeric), ~sum(.x, na.rm = T)))
+
+#Transpose and aggregate
+df_partner_agg <- df_partner %>% pivot_longer(cols = everything(),
+                                              names_to = "Partnership",
+                                              values_to = "Count")
+
+#Split the last values and create columns for all possible answers
+split_last <- data.frame(Partner = unique(sub('_([^_]*)$', '', colnames(df_partner))), 
+                  `1` = NA,
+                  `2` = NA, 
+                  `3` = NA, 
+                  check.names = F)
+
+#creating a dummy dataset with similar question numbers
+dat <- data.frame(outer(split_last$Partner, colnames(split_last[2:4]), paste, sep = "_")) %>% 
+  rename(NEW = 1,
+         EXISTING= 2,
+         EXPANDED = 3) 
+
+df_partner_update <- as.data.frame(lapply(dat, function(x) 
+  df_partner_agg$Count[match(x, df_partner_agg$Partnership)])) %>% 
+  cbind("Organizations" = c("Academic Institutions", 
+                            "Asian American and Pacific Islander-Serving Institution",
+                            "Community-based and civic organization",
+                            "Correctional facilities and institutions organizations",
+                            "Faith Based Organizations",
+                            "Health care providers",
+                            "Health-related organizations",
+                            "Local governmental agencies and community leaders",
+                            "Nongovernmental organizations",
+                            "Rural health clinics and critical access hospitals governmental organizations focused on non-health services",
+                            "Schools/School Districts",
+                            "Social service providers and organiztions, including those that address social determinant of health",
+                            "State offices of rual health or equivalent, state rural health associations",
+                            "Tribes/ Tribal organizations",
+                            "State Health department",
+                            "Local health department",
+                            "Council, community group, coalition, or another working group",
+                            "Mental or behavioral health",
+                            "Federal agency {other than CDC}",
+                            "Corporation, industry, or private sector",
+                            "Individual community members",
+                            "Other")) %>% 
+  relocate(Organizations, .before = NEW)
+```
+
+
+```{r Partnership plot}
+#plotting using plotly
+fig_partners <- plot_ly(df_partner_update, y = ~Organizations, x = ~NEW, 
+                        type = "bar", name = "NEW Partnerships", orientation = 'h', 
+                        text = ~NEW, textposition = "outside", textfont = list(size = 10),
+                        width = 1200, height = 1000) %>% 
+  add_trace(x = ~EXISTING, name = "EXISTING Partnerships", 
+            text = ~EXISTING,textfont = list(size = 10), textposition = "outside") %>% 
+  add_trace(x = ~EXPANDED, name = "EXPANDED Partnerships", 
+            text = ~EXPANDED ,textfont = list(size = 10), textposition = "outside") %>% 
+  layout(xaxis = list(title = 'Count', showticklabels = F), barmode = 'group', font = list(size = 8),
+         yaxis = list(title = '')) %>% layout(legend = list(orientation = 'h')) 
+
+fig_partners
+```
+
+
+```{r Table}
+writeLines("td, th { padding: 6px} th { background-color : teal ;
+           color: white; border : 1px solid white; } td { color : teal ;
+           border : 1px solid teal }", con = "mystyle.css")
+
+kable(df_partner_update, format = "html", 
+      caption = "Partnership", col.names = c("Activities","NEW Partnerships", "EXISITING Partnerships", "EXPANDED Partnerships"))
+```
+
+```{r By Race/Ethnicity}
+#reading data as characters
+# df_raced <- mysurvey %>%
+#   select(starts_with("Q2_"), `Name of Organization`) %>%
+#   melt(.,id = "Name of Organization", na.rm = TRUE)
+
+df_race <- mysurvey %>% 
+  select(starts_with("Q2_"), `Name of Organization`) %>% 
+  melt(.,id = "Name of Organization", na.rm = TRUE) %>%  
+  mutate(value= as.numeric(value))
+
+#With categories
+df_race_agg <-  aggregate(value~(variable +`Name of Organization`), melt(df_race),sum) %>% 
+  rename(Race = 1,
+         Organization = 2,
+         Count = 3) %>% 
+  mutate(Organization = ifelse(Organization == "Activity 3.1: Building a Public Health workforce: New Jersey COVID Community Corps", "CCC",
+                        ifelse(Organization == "Activity 4.3: The Library Project", "The Library Project", 
+                        ifelse(Organization == "Activity 4.1: Ultra Warm Chain of Trust", "Chain of Trust", NA)))) %>% 
+  mutate(Race = ifelse(Race == "Q2_1_1", "Alaska Native, Non-Hispanic",
+                ifelse(Race == "Q2_2_1", "American Indian, Non-Hispanic", 
+                ifelse(Race == "Q2_3_1", "Asian, Non-Hispanic", 
+                ifelse(Race == "Q2_4_1", "Black or African American, Non-Hispanic",
+                ifelse(Race == "Q2_5_1", "Hispanic/Latino",
+                ifelse(Race == "Q2_6_1", "Native Hawaiian and Pacific Islander, Non-Hispanic",
+                ifelse(Race == "Q2_7_1", "White, Non-Hispanic",
+                ifelse(Race == "Q2_8_1", "Multiple Races, Non-Hispanic",
+                ifelse(Race == "Q2_9_1", "Unknown",
+                NA))))))))))
+
+#Pivot wider on race/ethnicity with categories
+df_race_pivot <- pivot_wider(df_race_agg, 
+                             names_from = Organization,
+                             values_from = Count)
+
+
+
+
+#Plotting by Race/ethnicity with categories
+plot_ly(df_race_pivot, y = ~Race, x = ~CCC, 
+                        type = "bar", name = "CCC", orientation = 'h', text = ~prettyNum(CCC, big.mark = ","),
+                        textposition = "outside", textfont = list(size = 10),
+                        width = 1200, height = 1000) %>% 
+  add_trace(x = ~`Chain of Trust`, name = "Chain of Trust", 
+            text = ~prettyNum(`Chain of Trust`, big.mark = ","),textfont = list(size = 10), textposition = "outside") %>% 
+  add_trace(x = ~`The Library Project`, name = "The Library Project", 
+            text = ~prettyNum(`The Library Project`, big.mark = ",") ,textfont = list(size = 10), textposition = "outside") %>% 
+  layout(xaxis = list(title = 'Count', showticklabels = F), barmode = 'group', font = list(size = 8),
+         yaxis = list(title = '')) %>% layout(legend = list(orientation = 'h')) 
+
+```
+
+```{r Table for Race/Ethnicity}
+df_race_pivot %>% 
+  gt() %>% 
+  tab_header(title = "Race/Ethnicity by Organization") %>% 
+  fmt_number(columns = where(is.numeric), sep_mark = ",", decimals = 0) 
+  
+```
+
+```{r Race percentages}
+# df_race_pcat <- df_race_pivot %>% 
+#   rowwise(Race) %>% 
+#   summarise(Total = sum(c_across(where(is.numeric)))) %>%
+#   mutate(Percent = round(adorn_percentages(df_race_pcat,denominator = "all")*100, 2))
+
+
+#No categories on race/ethnicity-----
+df_all_race <-  aggregate(value~variable, melt(df_race),sum) %>% 
+  rename(Race = 1, Counts = 2) %>% 
+  mutate(Race = ifelse(Race == "Q2_1_1", "Alaska Native, Non-Hispanic",
+                ifelse(Race == "Q2_2_1", "American Indian, Non-Hispanic", 
+                ifelse(Race == "Q2_3_1", "Asian, Non-Hispanic", 
+                ifelse(Race == "Q2_4_1", "Black or African American, Non-Hispanic",
+                ifelse(Race == "Q2_5_1", "Hispanic/Latino",
+                ifelse(Race == "Q2_6_1", "Native Hawaiian and Pacific Islander, Non-Hispanic",
+                ifelse(Race == "Q2_7_1", "White, Non-Hispanic",
+                ifelse(Race == "Q2_8_1", "Multiple Races, Non-Hispanic",
+                ifelse(Race == "Q2_9_1", "Unknown",
+                NA)))))))))) %>%
+  mutate(`Percent Total` = round((Counts/sum(Counts)) * 100, 0)) %>% 
+  adorn_totals(where = "row") %>% 
+  mutate(`Percent Total` = paste0(`Percent Total`, '%')) 
+
+#Subsetting the Unknown categories----
+race_no_unknown <-  aggregate(value~variable, melt(df_race),sum) %>% 
+  rename(Race = 1, Counts = 2) %>% 
+  mutate(Race = ifelse(Race == "Q2_1_1", "Alaska Native, Non-Hispanic",
+                ifelse(Race == "Q2_2_1", "American Indian, Non-Hispanic", 
+                ifelse(Race == "Q2_3_1", "Asian, Non-Hispanic", 
+                ifelse(Race == "Q2_4_1", "Black or African American, Non-Hispanic",
+                ifelse(Race == "Q2_5_1", "Hispanic/Latino",
+                ifelse(Race == "Q2_6_1", "Native Hawaiian and Pacific Islander, Non-Hispanic",
+                ifelse(Race == "Q2_7_1", "White, Non-Hispanic",
+                ifelse(Race == "Q2_8_1", "Multiple Races, Non-Hispanic",
+                ifelse(Race == "Q2_9_1", "Unknown",
+                NA)))))))))) %>%
+  subset(Race != "Unknown") %>% 
+  mutate(`Percent Total` = round((Counts/sum(Counts)) * 100, 1)) %>% 
+  adorn_totals(where = "row") %>% 
+  mutate(`Percent Total` = paste0(`Percent Total`, '%')) 
+  
+```
+
+```{r Race Percentages Table}
+race_no_unknown %>% 
+  gt() %>% 
+  tab_header(title = "Race/Ethnicity (%)") %>% 
+  fmt_number(columns = where(is.numeric), sep_mark = ",", decimals = 0)  
+ # %>% gt_color_rows(Counts, palette = "ggsci::blue_material")
+```
+
+```{r Age group}
+#Select columns with age group and organizations
+df_age <- mysurvey %>% 
+  select(starts_with("Q12_"), `Name of Organization`) %>% 
+  melt(.,id = "Name of Organization", na.rm = TRUE) %>%  
+  mutate(value= as.numeric(value))
+
+df_age_agg <-  aggregate(value~(variable +`Name of Organization`), melt(df_age),sum) %>% 
+  rename(`Age group` = 1, Organization = 2, Count = 3) %>% 
+  mutate(`Age group` = ifelse(`Age group`== "Q12_1_1", "0 - 17",
+                ifelse(`Age group` == "Q12_2_1", "18 - 34", 
+                ifelse(`Age group` == "Q12_3_1", "35 - 44", 
+                ifelse(`Age group` == "Q12_4_1", "45 - 64",
+                ifelse(`Age group` == "Q12_5_1", "65+",
+                ifelse(`Age group` == "Q12_6_1", "Not Specified",
+                NA))))))) %>% 
+  mutate(Organization = ifelse(Organization == "Activity 3.1: Building a Public Health workforce: New Jersey COVID Community Corps", "CCC",
+                        ifelse(Organization == "Activity 4.3: The Library Project", "The Library Project", 
+                        ifelse(Organization == "Activity 4.1: Ultra Warm Chain of Trust", "Chain of Trust", NA))))
+
+df_age_pivot <- pivot_wider(df_age_agg, 
+                            names_from = Organization,
+                            values_from = Count)
+
+#Plotting by Age group
+plot_ly(df_age_pivot, y = ~`Age group`, x = ~CCC, 
+                        type = "bar", name = "CCC", orientation = 'h',
+                        width = 1200, height = 1000) %>% 
+  add_trace(x = ~`Chain of Trust`, name = "Chain of Trust") %>% 
+  add_trace(x = ~`The Library Project`, name = "The Library Project") %>% 
+  layout(xaxis = list(title = 'Count', showticklabels = F), barmode = 'group', font = list(size = 8),
+         yaxis = list(title = '')) %>% layout(legend = list(orientation = 'h')) 
+```
+## Age group table
+
+This is an opinionated diverging color palette of total counts by age group. It diverges from low to high as light blue to deep blue. 
+
+<!-- It is a good alternative to a red-green diverging palette as a color-blind friendly palette. -->
+
+
+```{r Age group Table}
+
+df_age_pivot %>% 
+  gt() %>% 
+  tab_header(title = "Age group") %>% 
+  fmt_number(columns = where(is.numeric), sep_mark = ",", decimals = 0) %>% 
+  gt_color_rows(where(is.numeric), palette = "ggsci::blue_material")
+
+#Choose what best works or ignore table color styles
+df_age_pivot %>% 
+  gt() %>% 
+  tab_header(title = "Age group") %>% 
+  fmt_number(columns = where(is.numeric), sep_mark = ",", decimals = 0) %>% 
+  gt_hulk_col_numeric(where(is.numeric))
+
+```
+
+```{r Age group %}
+age_percent <- aggregate(value~`Age group` , melt(df_age_agg),sum) %>% 
+  rename(Count = 2) %>% 
+  mutate(`Percent Total` = round((Count/sum(Count)) * 100, 0)) %>% 
+  adorn_totals(where = "row") %>% 
+  mutate(`Percent Total` = paste0(`Percent Total`, '%')) 
+  
+  age_percent %>% 
+  gt() %>% 
+  tab_header(title = "Age group (%") %>% 
+  fmt_number(columns = where(is.numeric), sep_mark = ",", decimals = 0)
+
+```
+
+```{r Mitigation and Prevention Services}
+#Select columns with services and organizations
+df_mp <- mysurvey %>% 
+  select(starts_with("Q1_"), `Name of Organization`) %>% 
+  melt(.,id = "Name of Organization", na.rm = TRUE) %>%  
+  mutate(value= as.numeric(value))
+
+df_mp_agg <-  aggregate(value~(variable +`Name of Organization`), melt(df_mp),sum) %>% 
+  rename(Services = 1, Organization = 2, Count = 3) %>% 
+  mutate(Services = ifelse(Services == "Q1_1_1", "Outreach",
+                ifelse(Services  == "Q1_2_1", "Vaccination and vaccine support", 
+                ifelse(Services  == "Q1_3_1", "Testing", 
+                ifelse(Services  == "Q1_4_1", "Contact tracing",
+                ifelse(Services  == "Q1_5_1", "Case investigation",
+                ifelse(Services  == "Q1_6_1", "Quarantine and isolation",
+                ifelse(Services  == "Q1_7_1", "Preventive case and disease management", 
+                ifelse(Services  == "Q1_8_1", "Personal protective equipment {PPE}", 
+                ifelse(Services  == "Q1_9_1", "Wrap-around services related to COVID-19",
+                ifelse(Services  == "Q1_10_1", "Evidence-based policies, systems, and environmental strategies",
+                ifelse(Services  == "Q1_11_1", "Other navigation and support services",
+                ifelse(Services  == "Q1_12_1", "Communications/Education on COVID-19 risk factors", 
+                ifelse(Services  == "Q1_13_1", "Plans for countermeasures and adaption services", 
+                ifelse(Services  == "Q1_14_1", "Transportation",
+                ifelse(Services  == "Q1_15_1", "Food",
+                ifelse(Services  == "Q1_16_1", "Shelter",
+                NA))))))))))))))))) %>% 
+  mutate(Organization = ifelse(Organization == "Activity 3.1: Building a Public Health workforce: New Jersey COVID Community Corps", "CCC",
+                        ifelse(Organization == "Activity 4.3: The Library Project", "The Library Project", 
+                        ifelse(Organization == "Activity 4.1: Ultra Warm Chain of Trust", "Chain of Trust", NA))))
+
+df_mp_pivot <- pivot_wider(df_mp_agg, 
+                            names_from = Organization,
+                            values_from = Count)
+#factor reorder
+
+
+#Plotting by Mitigation and Prevention services
+plot_ly(df_mp_pivot, y = ~Services, x = ~CCC, 
+                        type = "bar", name = "CCC", orientation = 'h',
+                        width = 1200, height = 1000) %>% 
+  add_trace(x = ~`Chain of Trust`, name = "Chain of Trust") %>% 
+  add_trace(x = ~`The Library Project`, name = "The Library Project") %>% 
+  layout(xaxis = list(title = 'Count', showticklabels = F), barmode = 'group', font = list(size = 8),
+         yaxis = list(title = '')) %>% layout(legend = list(orientation = 'h')) 
+```
+
+```{r Mitigation and Prevention Services Table}
+df_mp_pivot %>% 
+  gt() %>% 
+  tab_header(title = "Mitigation and Prevention Services") %>% 
+  fmt_number(columns = where(is.numeric), sep_mark = ",", decimals = 0) %>% 
+  cols_label(Services~ md("**Services**"),
+             CCC~ md("**CCC**"), 
+             `Chain of Trust` ~md("**Chain of Trust**"),
+             `The Library Project` ~ md("**The Library Project**"))
+  
+
+```
+
+```{r Mitigation and Prevention Services Tables (%)}
+mp_percent <- aggregate(value~Services , melt(df_mp_agg),sum) %>% 
+  rename(Count = 2) %>% 
+  mutate(`Percent Count` = round((Count/sum(Count))*100 , 2)) %>% 
+  adorn_totals(where = "row") %>% 
+  mutate(`Percent Total` = paste0(`Percent Total`, '%')) 
+  
+  mp_percent %>% 
+  gt() %>% 
+  tab_header(title = "Mitigation and Prevention Services Tables (%)") %>% 
+  fmt_number(columns = where(is.numeric), sep_mark = ",", decimals = 0) %>% 
+    cols_label(Services~ md("**Services**"),
+             CCC~ md("**CCC**"), 
+             `Chain of Trust` ~md("**Chain of Trust**"),
+             `The Library Project` ~ md("**The Library Project**"))
+
+```
+## Hires
+```{r Gender}
+df_gender <- mysurvey %>% 
+  select(starts_with("Q11_"), `Name of Organization`) %>% 
+  melt(.,id = "Name of Organization", na.rm = TRUE) %>%  
+  mutate(value= as.numeric(value))
+
+df_gender_agg <-  aggregate(value~(variable +`Name of Organization`), melt(df_gender),sum) %>% 
+  rename(Gender = 1, Organization = 2, Count = 3) %>% 
+  mutate(Gender = ifelse(Gender == "Q11_1_1", "Female",
+                ifelse(Gender  == "Q11_2_1", "Male", 
+                ifelse(Gender  == "Q11_3_1", "Not Specified", 
+                NA)))) %>% 
+  mutate(Organization = ifelse(Organization == "Activity 3.1: Building a Public Health workforce: New Jersey COVID Community Corps", "CCC",
+                        ifelse(Organization == "Activity 4.3: The Library Project", "The Library Project", 
+                        ifelse(Organization == "Activity 4.1: Ultra Warm Chain of Trust", "Chain of Trust", NA))))
+
+df_gender_pivot <- pivot_wider(df_gender_agg, 
+                            names_from = Organization,
+                            values_from = Count)
+
+#Plotting by Mitigation and Prevention services
+plot_ly(df_gender_pivot, y = ~Gender, x = ~CCC, 
+                        type = "bar", name = "CCC", orientation = 'h',
+                        width = 1200, height = 1000) %>% 
+  add_trace(x = ~`Chain of Trust`, name = "Chain of Trust") %>% 
+  add_trace(x = ~`The Library Project`, name = "The Library Project") %>% 
+  layout(xaxis = list(title = ' ', showticklabels = F), barmode = 'group', font = list(size = 12),
+         yaxis = list(title = '')) %>% layout(legend = list(orientation = 'h')) 
+```
+## Gender (%)
+
+This shows the distribution of counts by gender. 
+
+```{r Gender (%)}
+gender_percent <- aggregate(value~Gender , melt(df_gender_agg),sum) %>% 
+  rename(Count = 2) 
+
+plot_ly(gender_percent, type = "pie", labels = ~Gender, values = ~Count, 
+        textinfo = "label+percent", 
+        insidetextorientation = "radial")
+```
+
